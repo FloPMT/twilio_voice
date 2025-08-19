@@ -113,4 +113,13 @@ class MethodChannelTwilioCall extends TwilioCallPlatform {
   Future<bool?> isBluetoothOn() {
     return _channel.invokeMethod('isBluetoothOn', <String, dynamic>{});
   }
+
+  @override
+  Future<bool?> connect({Map<String, dynamic>? extraOptions}) {
+    _activeCall = ActiveCall(from: "", to: "", callDirection: CallDirection.outgoing);
+    final options = {
+      ...?extraOptions,
+    };
+    return _channel.invokeMethod('connect', options);
+  }
 }
