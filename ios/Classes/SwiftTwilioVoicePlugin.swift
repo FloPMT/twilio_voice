@@ -626,10 +626,26 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         from = from.replacingOccurrences(of: "client:", with: "")
         
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid)
+        reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName(from: from, params: callInvite.customParameters))
         self.callInvite = callInvite
     }
-    
+
+    // Locally registered name first, then the contact name / formatted number sent by the server
+    // as custom parameters, then the raw number, so unsaved numbers don't show as "Unknown Caller".
+    func callerName(from: String, params: [String:String]?) -> String {
+        if let name = clients[from], !name.isEmpty { return name }
+        let param: (String) -> String? = { key in
+            guard let value = params?[key]?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
+            return value
+        }
+        if let nickname = param("nickname") { return nickname }
+        let fullName = [param("firstName"), param("lastName")].compactMap { $0 }.joined(separator: " ")
+        if !fullName.isEmpty { return fullName }
+        if let formatted = param("formattedNumber") { return formatted }
+        if !from.isEmpty && from != defaultCaller { return from }
+        return clients["defaultCaller"] ?? defaultCaller
+    }
+
     func formatCustomParams(params: [String:Any]?)->String{
         guard let customParameters = params else{return ""}
         do{
@@ -922,7 +938,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             
             let callUpdate = CXCallUpdate()
             callUpdate.remoteHandle = callHandle
-            callUpdate.localizedCallerName = self.clients[handle] ?? self.clients["defaultCaller"] ?? self.defaultCaller
+            // Show the dialed number instead of "Unknown Caller" when it isn't a registered contact
+            callUpdate.localizedCallerName = self.clients[handle] ?? (handle.isEmpty ? nil : handle) ?? self.clients["defaultCaller"] ?? self.defaultCaller
             callUpdate.supportsDTMF = false
             callUpdate.supportsHolding = true
             callUpdate.supportsGrouping = false
@@ -933,12 +950,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         }
     }
     
-    func reportIncomingCall(from: String, uuid: UUID) {
+    func reportIncomingCall(from: String, uuid: UUID, callerName: String? = nil) {
         let callHandle = CXHandle(type: .generic, value: from)
-        
+
         let callUpdate = CXCallUpdate()
         callUpdate.remoteHandle = callHandle
-        callUpdate.localizedCallerName = clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
+        callUpdate.localizedCallerName = callerName ?? clients[from] ?? self.clients["defaultCaller"] ?? defaultCaller
         callUpdate.supportsDTMF = true
         callUpdate.supportsHolding = true
         callUpdate.supportsGrouping = false

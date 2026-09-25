@@ -692,7 +692,10 @@ class TVConnectionService : ConnectionService() {
             connection.extras.putString(TelecomManager.EXTRA_CALL_SUBJECT, it)
         }
         val name = if(connection.callDirection == CallDirection.OUTGOING) params.to else params.from
-        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, name, null), TelecomManager.PRESENTATION_ALLOWED)
+        // keep the actual number as the tel: address when the display name is resolved to a contact name
+        val rawNumber = if(connection.callDirection == CallDirection.OUTGOING) params.toRaw else params.fromRaw
+        val address = rawNumber.takeIf { it.isNotEmpty() && !it.startsWith("client:") } ?: name
+        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, address, null), TelecomManager.PRESENTATION_ALLOWED)
         connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
     }
 

@@ -27,14 +27,24 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                     }
 
                     if (!mFrom.startsWith("client:")) {
-                        // we have a number, return as is
-                        return mFrom
+                        // we have a number: locally registered name, then contact name / formatted number
+                        // sent by the server as custom parameters, then the number as is
+                        return mStorage.getRegisteredClient(mFrom)
+                            ?: serverCallerName()
+                            ?: mFrom
                     }
 
                     val mToName = mFrom.replace("client:", "")
                     return resolveHumanReadableName(mToName)
                 }
         }
+
+    private fun serverCallerName(): String? {
+        fun param(key: String): String? = customParameters[key]?.trim()?.takeIf { it.isNotEmpty() }
+        return param("nickname")
+            ?: listOfNotNull(param("firstName"), param("lastName")).joinToString(" ").takeIf { it.isNotEmpty() }
+            ?: param("formattedNumber")
+    }
 
     override val to: String
         get() {
