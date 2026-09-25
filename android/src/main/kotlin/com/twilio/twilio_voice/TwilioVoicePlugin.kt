@@ -595,7 +595,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     when (key) {
                         Constants.PARAM_TO, Constants.PARAM_FROM -> {}
                         else -> {
-                            params[key.toString()] = value.toString()
+                            // skip nulls, otherwise they're sent (and displayed) as the string "null"
+                            value?.let { params[key.toString()] = it.toString() }
                         }
                     }
                 }
@@ -653,7 +654,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     when (key) {
                         Constants.PARAM_TO, Constants.PARAM_FROM -> {}
                         else -> {
-                            params[key.toString()] = value.toString()
+                            // skip nulls, otherwise they're sent (and displayed) as the string "null"
+                            value?.let { params[key.toString()] = it.toString() }
                         }
                     }
                 }

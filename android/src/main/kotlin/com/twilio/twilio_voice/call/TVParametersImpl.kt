@@ -125,8 +125,8 @@ class TVCallParametersImpl(storage: Storage, call: Call, callTo: String, callFro
                     }
 
                     if (!mTo.startsWith("client:")) {
-                        // we have a number, return as is
-                        return mTo
+                        // we have a number: locally registered contact name, else the number as is
+                        return mStorage.getRegisteredClient(mTo) ?: mTo
                     }
 
                     val mToName = mTo.replace("client:", "")

@@ -631,6 +631,12 @@ class TVConnectionService : ConnectionService() {
         // Setup connection UI parameters
         connection.setInitializing()
 
+        // Show the recipient right away; otherwise the in-call UI has no address/name until the call is RINGING
+        val recipientName = params[TVParameters.PARAM_RECIPIENT_NAME]?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
+        connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, to, null), TelecomManager.PRESENTATION_ALLOWED)
+        connection.setCallerDisplayName(recipientName ?: mStorage.getRegisteredClient(to) ?: to, TelecomManager.PRESENTATION_ALLOWED)
+        Log.d(TAG, "onCreateOutgoingConnection: to=$to, recipientName=$recipientName")
+
         // Apply extras
         connection.extras = request.extras
 
@@ -697,6 +703,7 @@ class TVConnectionService : ConnectionService() {
         val address = rawNumber.takeIf { it.isNotEmpty() && !it.startsWith("client:") } ?: name
         connection.setAddress(Uri.fromParts(PhoneAccount.SCHEME_TEL, address, null), TelecomManager.PRESENTATION_ALLOWED)
         connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+        Log.d(TAG, "applyParameters: direction=${connection.callDirection}, name=$name, address=$address")
     }
 
     private fun sendBroadcastEvent(ctx: Context, event: String, callSid: String?, extras: Bundle? = null) {
