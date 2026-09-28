@@ -29,7 +29,8 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                     if (!mFrom.startsWith("client:")) {
                         // we have a number: locally registered name, then contact name / formatted number
                         // sent by the server as custom parameters, then the number as is
-                        return mStorage.getRegisteredClient(mFrom)
+                        return customParameters["displayName"]?.trim()?.takeIf { it.isNotEmpty() }
+                            ?: mStorage.getRegisteredClient(mFrom)
                             ?: serverCallerName()
                             ?: mFrom
                     }

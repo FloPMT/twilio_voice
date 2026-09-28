@@ -630,14 +630,16 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.callInvite = callInvite
     }
 
-    // Locally registered name first, then the contact name / formatted number sent by the server
+    // Server display name first, then locally registered name, then the contact name / formatted number sent by the server
     // as custom parameters, then the raw number, so unsaved numbers don't show as "Unknown Caller".
     func callerName(from: String, params: [String:String]?) -> String {
-        if let name = clients[from], !name.isEmpty { return name }
         let param: (String) -> String? = { key in
             guard let value = params?[key]?.trimmingCharacters(in: .whitespaces), !value.isEmpty else { return nil }
             return value
         }
+        // twilio-webhooks resolves the display name (nickname > full name > formatted number > number)
+        if let displayName = param("displayName") { return displayName }
+        if let name = clients[from], !name.isEmpty { return name }
         if let nickname = param("nickname") { return nickname }
         let fullName = [param("firstName"), param("lastName")].compactMap { $0 }.joined(separator: " ")
         if !fullName.isEmpty { return fullName }
