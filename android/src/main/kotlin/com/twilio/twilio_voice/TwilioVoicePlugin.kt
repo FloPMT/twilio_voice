@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -19,6 +21,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.call.TVContactLookup
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
@@ -980,6 +983,49 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                     )
                     result.success(false)
                 }
+            }
+
+            TVMethodChannels.SET_CONTACT_LOOKUP_CALLING_CODES -> {
+                val callingCodes = call.argument<List<String>>("callingCodes") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'callingCodes' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                storage?.let {
+                    it.contactLookupCallingCodes = callingCodes
+                    result.success(true)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set contact lookup calling codes. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.LOOKUP_CONTACT_NAME -> {
+                val number = call.argument<String>("number") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'number' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+                val ctx = context ?: run {
+                    result.success(null)
+                    return@onMethodCall
+                }
+                val callingCodes = storage?.contactLookupCallingCodes ?: emptyList()
+
+                Thread {
+                    val name = TVContactLookup.findName(ctx, number, callingCodes)
+                    Handler(Looper.getMainLooper()).post { result.success(name) }
+                }.start()
             }
 
             else -> {

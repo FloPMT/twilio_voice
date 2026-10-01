@@ -191,6 +191,17 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   /// This caller name will be shown for incoming calls
   Future<bool?> setDefaultCallerName(String callerName);
 
+  /// Set the country calling codes (e.g. "49", "1") of the countries whose
+  /// numbers may be saved in the phone's contacts without a country code
+  ///
+  /// Incoming calls without a `contactId` parameter show the name of the
+  /// matching phone contact, if contacts access has been granted
+  Future<bool?> setContactLookupCallingCodes(List<String> callingCodes);
+
+  /// Name of the phone contact saved with [number] (E.164), matched like for
+  /// incoming calls. Null if there is none or contacts access is not granted
+  Future<String?> lookupContactName(String number);
+
   /// Android-only, shows background call UI
   @Deprecated('custom call UI not used anymore, has no effect')
   Future<bool?> showBackgroundCallUI();

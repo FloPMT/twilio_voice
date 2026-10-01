@@ -312,6 +312,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 clients["defaultCaller"] = defaultCaller
                 UserDefaults.standard.set(clients, forKey: kClientList)
             }
+        }else if flutterCall.method == "setContactLookupCallingCodes"{
+            ContactNameLookup.callingCodes = arguments["callingCodes"] as? [String] ?? []
+            result(true)
+            return
+        }else if flutterCall.method == "lookupContactName"{
+            guard let number = arguments["number"] as? String else {
+                result(nil)
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let name = ContactNameLookup.name(for: number)
+                DispatchQueue.main.async { result(name) }
+            }
+            return
         }else if flutterCall.method == "hasMicPermission" {
             let permission = AVAudioSession.sharedInstance().recordPermission
             result(permission == .granted)
@@ -628,6 +642,25 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName(from: from, params: callInvite.customParameters))
         self.callInvite = callInvite
+        updateCallerNameFromContacts(from: from, uuid: callInvite.uuid, params: callInvite.customParameters)
+    }
+
+    // Callers without a SuperPhone contact show the name of the matching phone contact, if any.
+    // The call is reported first because CallKit requires that right away, the lookup can take a moment.
+    func updateCallerNameFromContacts(from: String, uuid: UUID, params: [String:String]?) {
+        let contactId = params?["contactId"]?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard contactId.isEmpty, clients[from] == nil, ContactNameLookup.hasAccess else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let name = ContactNameLookup.name(for: from) else { return }
+            DispatchQueue.main.async {
+                guard self.callInvite?.uuid == uuid || self.call?.uuid == uuid else { return }
+                let callUpdate = CXCallUpdate()
+                callUpdate.remoteHandle = CXHandle(type: .generic, value: from)
+                callUpdate.localizedCallerName = name
+                self.callKitProvider.reportCall(with: uuid, updated: callUpdate)
+                self.sendPhoneCallEvents(description: "LOG|Caller name updated from phone contacts", isError: false)
+            }
+        }
     }
 
     // Server display name first, then locally registered name, then the contact name / formatted number sent by the server

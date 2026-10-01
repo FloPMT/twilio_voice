@@ -48,6 +48,8 @@ enum class TVMethodChannels(val method: String) {
     REJECT_CALL_ON_NO_PERMISSIONS("rejectCallOnNoPermissions"),
     IS_REJECTING_CALL_ON_NO_PERMISSIONS("isRejectingCallOnNoPermissions"),
     UPDATE_CALLKIT_ICON("updateCallKitIcon"),
+    SET_CONTACT_LOOKUP_CALLING_CODES("setContactLookupCallingCodes"),
+    LOOKUP_CONTACT_NAME("lookupContactName"),
     CONNECT("connect");
 
     companion object {

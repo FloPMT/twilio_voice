@@ -293,6 +293,18 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
     return _channel.invokeMethod('unregisterClient', <String, dynamic>{"id": clientId});
   }
 
+  /// Set the country calling codes used to match incoming numbers against phone contacts
+  @override
+  Future<bool?> setContactLookupCallingCodes(List<String> callingCodes) {
+    return _channel.invokeMethod('setContactLookupCallingCodes', <String, dynamic>{"callingCodes": callingCodes});
+  }
+
+  /// Name of the phone contact saved with [number]
+  @override
+  Future<String?> lookupContactName(String number) {
+    return _channel.invokeMethod('lookupContactName', <String, dynamic>{"number": number});
+  }
+
   /// Set default caller name for no registered clients
   ///
   /// This caller name will be shown for incoming calls

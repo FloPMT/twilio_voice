@@ -17,6 +17,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.twilio.twilio_voice.R
 import com.twilio.twilio_voice.call.TVCallInviteParametersImpl
 import com.twilio.twilio_voice.call.TVCallParametersImpl
+import com.twilio.twilio_voice.call.TVContactLookup
 import com.twilio.twilio_voice.call.TVParameters
 import com.twilio.twilio_voice.fcm.VoiceFirebaseMessagingService
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
@@ -503,7 +504,9 @@ class TVConnectionService : ConnectionService() {
         val storage: Storage = StorageImpl(applicationContext)
 
         // Resolve call parameters
-        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci);
+        val callParams: TVParameters = TVCallInviteParametersImpl(storage, ci) { number ->
+            TVContactLookup.findName(applicationContext, number, storage.contactLookupCallingCodes)
+        }
 
         // Create connection
         val connection = TVCallInviteConnection(applicationContext, ci, callParams)
