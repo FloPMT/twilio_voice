@@ -440,8 +440,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         result.success(false)
                     }
                 } else {
-                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle speaker")
-                    result.success(false)
+                    // The outgoing call has no connection until it rings
+                    Log.d(TAG, "onMethodCall: Not on call yet, applying speaker once connected")
+                    TVConnectionService.pendingSpeakerState = speakerIsOn
+                    result.success(true)
                 }
             }
 
@@ -1170,6 +1172,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 return false
             }
 
+            // Forget a speaker choice from a call that never got a connection
+            TVConnectionService.pendingSpeakerState = null
             val callParams = HashMap<String, String>(params)
             if (params[Constants.PARAM_TO] == null) {
                 Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")

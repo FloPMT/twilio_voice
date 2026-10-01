@@ -45,6 +45,11 @@ class TVConnectionService : ConnectionService() {
 
         val activeConnections = HashMap<String, TVCallConnection>()
 
+        /**
+         * Speaker state chosen before the outgoing call has a connection, applied once it has one.
+         */
+        var pendingSpeakerState: Boolean? = null
+
         val TWI_SCHEME: String = "twi"
 
         val SERVICE_TYPE_MICROPHONE: Int = 100
@@ -455,7 +460,8 @@ class TVConnectionService : ConnectionService() {
                 }
 
                 ACTION_TOGGLE_SPEAKER -> {
-                    val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: run {
+                    // An outgoing call is neither active, ringing nor dialing until it connects
+                    val callHandle = it.getStringExtra(EXTRA_CALL_HANDLE) ?: getActiveCallHandle() ?: activeConnections.keys.firstOrNull() ?: run {
                         Log.e(TAG, "onStartCommand: ACTION_TOGGLE_SPEAKER is missing String EXTRA_CALL_HANDLE")
                         return@let
                     }
@@ -597,6 +603,8 @@ class TVConnectionService : ConnectionService() {
                     applyParameters(connection, callParams)
                     attachCallEventListeners(connection, callSid)
                     callParams.callSid = callSid
+                    pendingSpeakerState?.let { speakerOn -> connection.toggleSpeaker(speakerOn) }
+                    pendingSpeakerState = null
                 }
             }
         }
