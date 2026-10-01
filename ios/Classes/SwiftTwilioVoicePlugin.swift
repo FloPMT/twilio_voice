@@ -39,6 +39,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
     var call:Call?
     var callKitCompletionCallback: ((Bool)->Swift.Void?)? = nil
     var audioDevice: DefaultAudioDevice = DefaultAudioDevice()
+    /// Speaker state chosen for the current call, also applied whenever the Voice SDK configures the audio session.
+    var speakerOn: Bool = false
     
     var callKitProvider: CXProvider
     var callKitCallController: CXCallController
@@ -72,6 +74,13 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         callKitProvider.setDelegate(self, queue: nil)
         _ = updateCallKitIcon(icon: defaultIcon)
+        // The Voice SDK configures the audio session with its default audio device when a call's audio starts,
+        // which resets the output port. Keep the speaker if it was turned on before that.
+        (TwilioVoiceSDK.audioDevice as? DefaultAudioDevice)?.block = { [weak self] in
+            DefaultAudioDevice.DefaultAVAudioSessionConfigurationBlock()
+            self?.overrideOutputAudioPort()
+        }
+        NotificationCenter.default.addObserver(self, selector: #selector(audioRouteChanged(_:)), name: AVAudioSession.routeChangeNotification, object: nil)
         
         voipRegistry.delegate = self
         voipRegistry.desiredPushTypes = Set([PKPushType.voIP])
@@ -180,10 +189,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         {
             guard let speakerIsOn = arguments["speakerIsOn"] as? Bool else {return}
             toggleAudioRoute(toSpeaker: speakerIsOn)
-            guard let eventSink = eventSink else {
-                return
-            }
-            eventSink(speakerIsOn ? "Speaker On" : "Speaker Off")
+            eventSink?(speakerIsOn ? "Speaker On" : "Speaker Off")
         }
         else if flutterCall.method == "isOnSpeaker"
         {
@@ -312,6 +318,20 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
                 clients["defaultCaller"] = defaultCaller
                 UserDefaults.standard.set(clients, forKey: kClientList)
             }
+        }else if flutterCall.method == "setContactLookupCallingCodes"{
+            ContactNameLookup.callingCodes = arguments["callingCodes"] as? [String] ?? []
+            result(true)
+            return
+        }else if flutterCall.method == "lookupContactName"{
+            guard let number = arguments["number"] as? String else {
+                result(nil)
+                return
+            }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let name = ContactNameLookup.name(for: number)
+                DispatchQueue.main.async { result(name) }
+            }
+            return
         }else if flutterCall.method == "hasMicPermission" {
             let permission = AVAudioSession.sharedInstance().recordPermission
             result(permission == .granted)
@@ -628,6 +648,25 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
         reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName(from: from, params: callInvite.customParameters))
         self.callInvite = callInvite
+        updateCallerNameFromContacts(from: from, uuid: callInvite.uuid, params: callInvite.customParameters)
+    }
+
+    // Callers without a SuperPhone contact show the name of the matching phone contact, if any.
+    // The call is reported first because CallKit requires that right away, the lookup can take a moment.
+    func updateCallerNameFromContacts(from: String, uuid: UUID, params: [String:String]?) {
+        let contactId = params?["contactId"]?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard contactId.isEmpty, clients[from] == nil, ContactNameLookup.hasAccess else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let name = ContactNameLookup.name(for: from) else { return }
+            DispatchQueue.main.async {
+                guard self.callInvite?.uuid == uuid || self.call?.uuid == uuid else { return }
+                let callUpdate = CXCallUpdate()
+                callUpdate.remoteHandle = CXHandle(type: .generic, value: from)
+                callUpdate.localizedCallerName = name
+                self.callKitProvider.reportCall(with: uuid, updated: callUpdate)
+                self.sendPhoneCallEvents(description: "LOG|Caller name updated from phone contacts", isError: false)
+            }
+        }
     }
 
     // Server display name first, then locally registered name, then the contact name / formatted number sent by the server
@@ -731,7 +770,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
             callKitCompletionCallback(true)
         }
         
-        toggleAudioRoute(toSpeaker: false)
+        // Keep the speaker if it was turned on while the call was connecting
+        toggleAudioRoute(toSpeaker: speakerOn)
+        sendEvent(speakerOn ? "Speaker On" : "Speaker Off")
     }
     
     public func call(call: Call, isReconnectingWithError error: Error) {
@@ -792,7 +833,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
         
         self.callOutgoing = false
         self.userInitiatedDisconnect = false
-        
+        self.speakerOn = false
     }
     
     func isSpeakerOn() -> Bool {
@@ -816,20 +857,34 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin,  FlutterStreamHand
 
     // MARK: AVAudioSession
     func toggleAudioRoute(toSpeaker: Bool) {
-        // The mode set by the Voice SDK is "VoiceChat" so the default audio route is the built-in receiver. Use port override to switch the route.
-        audioDevice.block = {
-            DefaultAudioDevice.DefaultAVAudioSessionConfigurationBlock()
-            do {
-                if (toSpeaker) {
-                    try AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
-                } else {
-                    try AVAudioSession.sharedInstance().overrideOutputAudioPort(.none)
-                }
-            } catch {
-                self.sendPhoneCallEvents(description: "LOG|\(error.localizedDescription)", isError: false)
-            }
+        speakerOn = toSpeaker
+        DefaultAudioDevice.DefaultAVAudioSessionConfigurationBlock()
+        overrideOutputAudioPort()
+    }
+
+    /// Headphones connecting or disconnecting during a call change the output and end the speaker override,
+    /// so the speaker state shown in the app follows the actual output.
+    @objc func audioRouteChanged(_ notification: Notification) {
+        guard let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason),
+              reason == .newDeviceAvailable || reason == .oldDeviceUnavailable else { return }
+        // Posted on a background thread
+        DispatchQueue.main.async {
+            guard self.call != nil else { return }
+            let onSpeaker = self.isSpeakerOn()
+            guard onSpeaker != self.speakerOn else { return }
+            self.speakerOn = onSpeaker
+            self.sendEvent(onSpeaker ? "Speaker On" : "Speaker Off")
         }
-        audioDevice.block()
+    }
+
+    func overrideOutputAudioPort() {
+        // The mode set by the Voice SDK is "VoiceChat" so the default audio route is the built-in receiver. Use port override to switch the route.
+        do {
+            try AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
+        } catch {
+            sendPhoneCallEvents(description: "LOG|\(error.localizedDescription)", isError: false)
+        }
     }
     
     // MARK: CXProviderDelegate

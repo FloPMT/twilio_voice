@@ -8,12 +8,27 @@ import com.twilio.twilio_voice.storage.Storage
 import com.twilio.voice.Call
 import com.twilio.voice.CallInvite
 
-class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVParametersImpl(storage, callInvite.callSid, callInvite.customParameters) {
+class TVCallInviteParametersImpl(
+    storage: Storage,
+    callInvite: CallInvite,
+    private val contactNameLookup: ((String) -> String?)? = null
+) : TVParametersImpl(storage, callInvite.callSid, callInvite.customParameters) {
 
     private val mCallInvite: CallInvite
 
     init {
         mCallInvite = callInvite
+    }
+
+    // Name of the matching phone contact, for callers without a SuperPhone contact
+    private val phoneContactName: String? by lazy {
+        val mFrom = mCallInvite.from ?: ""
+        val hasSuperPhoneContact = !customParameters["contactId"]?.trim().isNullOrEmpty()
+        if (mFrom.isEmpty() || hasSuperPhoneContact || mStorage.getRegisteredClient(mFrom) != null) {
+            null
+        } else {
+            contactNameLookup?.invoke(mFrom)
+        }
     }
 
     override val from: String
@@ -27,9 +42,11 @@ class TVCallInviteParametersImpl(storage: Storage, callInvite: CallInvite) : TVP
                     }
 
                     if (!mFrom.startsWith("client:")) {
-                        // we have a number: locally registered name, then contact name / formatted number
-                        // sent by the server as custom parameters, then the number as is
-                        return customParameters["displayName"]?.trim()?.takeIf { it.isNotEmpty() }
+                        // we have a number: phone contact name, then the display name sent by the server, then
+                        // locally registered name, then contact name / formatted number sent by the server as
+                        // custom parameters, then the number as is
+                        return phoneContactName
+                            ?: customParameters["displayName"]?.trim()?.takeIf { it.isNotEmpty() }
                             ?: mStorage.getRegisteredClient(mFrom)
                             ?: serverCallerName()
                             ?: mFrom

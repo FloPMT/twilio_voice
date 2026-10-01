@@ -11,6 +11,7 @@ class StorageImpl(ctx: Context) : Storage {
     private val kDefaultCaller: String = "defaultCaller"
     private val kRejectOnNoPermissions: String = "rejectOnNoPermissions"
     private val kShowNotifications: String = "show-notifications"
+    private val kContactLookupCallingCodes: String = "contactLookupCallingCodes"
 
     override var defaultCaller
         get() = prefs.getString(kDefaultCaller, null)
@@ -26,6 +27,17 @@ class StorageImpl(ctx: Context) : Storage {
         set(value) {
             val editor = prefs.edit()
             editor.putBoolean(kRejectOnNoPermissions, value)
+            editor.apply()
+        }
+
+    override var contactLookupCallingCodes: List<String>
+        get() = prefs.getString(kContactLookupCallingCodes, null)
+            ?.split(",")
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
+        set(value) {
+            val editor = prefs.edit()
+            editor.putString(kContactLookupCallingCodes, value.joinToString(","))
             editor.apply()
         }
 

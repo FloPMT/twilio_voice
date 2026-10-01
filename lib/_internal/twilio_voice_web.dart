@@ -197,6 +197,18 @@ class TwilioVoiceWeb extends MethodChannelTwilioVoice {
     return true;
   }
 
+  /// Phone contacts are not available on web.
+  @override
+  Future<bool?> setContactLookupCallingCodes(List<String> callingCodes) async {
+    return false;
+  }
+
+  /// Phone contacts are not available on web.
+  @override
+  Future<String?> lookupContactName(String number) async {
+    return null;
+  }
+
   /// Remove registered client by id, if the client is not registered, do nothing.
   /// See [LocalStorageWeb.removeRegisteredClient]
   @override

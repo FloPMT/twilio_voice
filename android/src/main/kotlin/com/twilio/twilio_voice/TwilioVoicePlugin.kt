@@ -10,6 +10,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.telecom.CallAudioState
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
@@ -19,6 +21,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.twilio.twilio_voice.call.TVContactLookup
 import com.twilio.twilio_voice.constants.Constants
 import com.twilio.twilio_voice.constants.FlutterErrorCodes
 import com.twilio.twilio_voice.receivers.TVBroadcastReceiver
@@ -437,8 +440,10 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                         result.success(false)
                     }
                 } else {
-                    Log.d(TAG, "onMethodCall: Not on call, cannot toggle speaker")
-                    result.success(false)
+                    // The outgoing call has no connection until it rings
+                    Log.d(TAG, "onMethodCall: Not on call yet, applying speaker once connected")
+                    TVConnectionService.pendingSpeakerState = speakerIsOn
+                    result.success(true)
                 }
             }
 
@@ -982,6 +987,49 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 }
             }
 
+            TVMethodChannels.SET_CONTACT_LOOKUP_CALLING_CODES -> {
+                val callingCodes = call.argument<List<String>>("callingCodes") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'callingCodes' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+
+                storage?.let {
+                    it.contactLookupCallingCodes = callingCodes
+                    result.success(true)
+                } ?: run {
+                    Log.e(
+                        TAG,
+                        "Storage is null, cannot set contact lookup calling codes. Has Storage been initialized?"
+                    )
+                    result.success(false)
+                }
+            }
+
+            TVMethodChannels.LOOKUP_CONTACT_NAME -> {
+                val number = call.argument<String>("number") ?: run {
+                    result.error(
+                        FlutterErrorCodes.MALFORMED_ARGUMENTS,
+                        "No 'number' provided or invalid type",
+                        null
+                    )
+                    return@onMethodCall
+                }
+                val ctx = context ?: run {
+                    result.success(null)
+                    return@onMethodCall
+                }
+                val callingCodes = storage?.contactLookupCallingCodes ?: emptyList()
+
+                Thread {
+                    val name = TVContactLookup.findName(ctx, number, callingCodes)
+                    Handler(Looper.getMainLooper()).post { result.success(name) }
+                }.start()
+            }
+
             else -> {
                 result.notImplemented()
             }
@@ -1124,6 +1172,8 @@ class TwilioVoicePlugin : FlutterPlugin, MethodCallHandler, EventChannel.StreamH
                 return false
             }
 
+            // Forget a speaker choice from a call that never got a connection
+            TVConnectionService.pendingSpeakerState = null
             val callParams = HashMap<String, String>(params)
             if (params[Constants.PARAM_TO] == null) {
                 Log.w(TAG, "Call parameters must include '${Constants.PARAM_TO}', removing...")

@@ -98,6 +98,9 @@ open class TVCallConnection(
     open val callDirection = CallDirection.OUTGOING
     private var callParams: TVParameters? = null
 
+    // Speaker state chosen while the call is connecting, when Telecom may not route the audio yet
+    private var pendingSpeakerState: Boolean? = null
+
     init {
         context = ctx
         this.onDisconnected = onDisconnected
@@ -193,6 +196,7 @@ open class TVCallConnection(
         Log.d(TAG, "onConnected: onConnected")
         twilioCall = call
         setActive()
+        pendingSpeakerState?.let { toggleSpeaker(it) }
         onCallStateListener?.withValue(call.state)
         onEvent?.onChange(TVNativeCallEvents.EVENT_CONNECTED, Bundle().apply {
             putString(TVBroadcastReceiver.EXTRA_CALL_HANDLE, callParams?.callSid)
@@ -358,6 +362,13 @@ open class TVCallConnection(
         Log.d(TAG, "onCallAudioStateChanged: onCallAudioStateChanged ${state.toString()}")
         super.onCallAudioStateChanged(state)
 
+        // The first audio state can arrive after the speaker was chosen
+        pendingSpeakerState?.let { speakerOn ->
+            if (state != null && (state.route == CallAudioState.ROUTE_SPEAKER) != speakerOn) {
+                toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, speakerOn)
+            }
+        }
+
         Intent(TVBroadcastReceiver.ACTION_AUDIO_STATE).apply {
             putExtra(TVBroadcastReceiver.EXTRA_AUDIO_STATE, state)
         }.also {
@@ -440,6 +451,7 @@ open class TVCallConnection(
      * @param newState: true if speaker is enabled, false if speaker is disabled
      */
     fun toggleSpeaker(newState: Boolean) {
+        pendingSpeakerState = if (state == STATE_ACTIVE) null else newState
         toggleAudioRoute(CallAudioState.ROUTE_SPEAKER, newState)
     }
 

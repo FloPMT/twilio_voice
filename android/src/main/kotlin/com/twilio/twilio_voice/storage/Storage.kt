@@ -38,6 +38,12 @@ interface Storage {
     var rejectOnNoPermissions: Boolean
 
     /**
+     * Get/set the country calling codes (e.g. "49", "1") used to match incoming numbers against phone contacts saved
+     * without a country code. Default is empty.
+     */
+    var contactLookupCallingCodes: List<String>
+
+    /**
      * Get the default caller name, if not set, return the default [Constants.DEFAULT_UNKNOWN_CALLER]
      * @param id: the id of the registered client
      * @return the default caller name
