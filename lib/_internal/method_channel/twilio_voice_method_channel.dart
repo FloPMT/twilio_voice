@@ -328,6 +328,9 @@ class MethodChannelTwilioVoice extends TwilioVoicePlatform {
         deviceTokenChanged!(token);
       }
       return CallEvent.log;
+    } else if (state.startsWith("Redial|")) {
+      requestRedial(state.split('|')[1]);
+      return CallEvent.log;
     } else if (state.startsWith("LOG|PERMISSION|")) {
       List<String> tokens = state.split('|');
       if (kDebugMode) {

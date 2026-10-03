@@ -1,3 +1,10 @@
+## 0.3.4
+
+* Feat: [iOS] Calls use LiveCommunicationKit on iOS 17.4 and later, so they show in the Phone app's Recents with the contact name and photo and get the full Lock Screen conversation UI. CallKit stays in use on older versions, or on all versions when `TwilioVoiceDisableLiveCommunicationKit` is set to `true` in Info.plist.
+* Feat: [iOS] `setOnRedialRequested` reports the number to call when a call is selected in the Phone app's Recents. Requires `INStartCallIntent` in `NSUserActivityTypes`.
+* Feat: [iOS] Mute, hold and keypad tones from the system call UI are applied to the call, mute and hold are reported as call events (LiveCommunicationKit only).
+* Change: [iOS] Minimum deployment target is iOS 13.
+
 ## 0.3.2
 
 * Fix: [iOS] Add missing `deviceToken` when reporting 'DEVICETOKEN' `CallEvent`. [Issue #241](https://github.com/cybex-dev/twilio_voice/issues/241)

@@ -9,6 +9,7 @@ import 'shared_platform_interface.dart';
 import 'twilio_call_platform_interface.dart';
 
 typedef OnDeviceTokenChanged = Function(String token);
+typedef OnRedialRequested = Function(String number);
 
 abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   TwilioVoicePlatform() : super(token: _token);
@@ -32,6 +33,31 @@ abstract class TwilioVoicePlatform extends SharedPlatformInterface {
   OnDeviceTokenChanged? deviceTokenChanged;
   void setOnDeviceTokenChanged(OnDeviceTokenChanged deviceTokenChanged) {
     this.deviceTokenChanged = deviceTokenChanged;
+  }
+
+  OnRedialRequested? redialRequested;
+  String? _pendingRedial;
+
+  /// iOS only: called with the number to call when the user selects one of this app's calls in the Phone app's
+  /// Recents. The app is expected to place the call.
+  ///
+  /// A request received before a handler is set, e.g. when it launched the app, is delivered once it is set.
+  void setOnRedialRequested(OnRedialRequested redialRequested) {
+    this.redialRequested = redialRequested;
+    final pending = _pendingRedial;
+    _pendingRedial = null;
+    if (pending != null) {
+      redialRequested(pending);
+    }
+  }
+
+  void requestRedial(String number) {
+    final handler = redialRequested;
+    if (handler == null) {
+      _pendingRedial = number;
+    } else {
+      handler(number);
+    }
   }
 
   /// register fcm token, and device token for android
