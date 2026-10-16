@@ -225,6 +225,7 @@ final class LiveCommunicationKitBridge: NSObject, ConversationManagerDelegate {
                 return
             }
             report(.conversationStartedConnecting(Date()), uuid: uuid)
+            disableAudioUntilActivated()
             plugin.performVoiceCall(uuid: uuid, client: "") { [weak self] success in
                 if success {
                     self?.reportConnected(uuid: uuid)
@@ -239,13 +240,14 @@ final class LiveCommunicationKitBridge: NSObject, ConversationManagerDelegate {
                 action.fail()
                 return
             }
-            plugin.performAnswerVoiceCall(uuid: uuid) { success in
-                if success {
-                    action.fulfill(dateConnected: Date())
-                } else {
-                    action.fail()
-                }
+            disableAudioUntilActivated()
+            plugin.performAnswerVoiceCall(uuid: uuid) { [weak self] success in
+                self?.log(success ? "performAnswerVoiceCall() successful" : "performAnswerVoiceCall() failed")
             }
+            // Fulfilled right away like the CallKit path, the system only activates the audio session after that.
+            // Waiting for the call to connect first let the Voice SDK start audio without an active session.
+            // A call that fails to connect is reported as ended by the plugin.
+            action.fulfill(dateConnected: Date())
 
         case let action as EndConversationAction:
             log("conversationManager:perform:EndConversationAction")
@@ -293,6 +295,13 @@ final class LiveCommunicationKitBridge: NSObject, ConversationManagerDelegate {
             log("Unhandled action: \(type(of: action))")
             action.fail()
         }
+    }
+
+    /// The Voice SDK starts audio as soon as a call connects if its device is enabled. Before the system activates
+    /// the audio session that start fails, and enabling the already enabled device later does not retry it, so the
+    /// call stays silent. The device is enabled again in `conversationManager(_:didActivate:)`.
+    private func disableAudioUntilActivated() {
+        audioDevice?.isEnabled = false
     }
 
     // MARK: Recents redial
