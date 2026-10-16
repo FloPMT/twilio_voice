@@ -27,6 +27,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
     var identity = "alice"
     var callTo: String = "error"
     var defaultCaller = "Unknown Caller"
+    /// Name shown for the ringing call, reused for the missed call notification if the caller hangs up.
+    private var incomingCallerName: (callSid: String, name: String)?
     var deviceToken: Data? {
         get{UserDefaults.standard.data(forKey: kCachedDeviceToken)}
         set{UserDefaults.standard.setValue(newValue, forKey: kCachedDeviceToken)}
@@ -446,18 +448,18 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
             
             self.checkRecordPermission { (permissionGranted) in
                 if (!permissionGranted) {
-                    let alertController: UIAlertController = UIAlertController(title: String(format:  NSLocalizedString("mic_permission_title", comment: "") , SwiftTwilioVoicePlugin.appName),
-                                                                               message: NSLocalizedString( "mic_permission_subtitle", comment: ""),
+                    let alertController: UIAlertController = UIAlertController(title: String(format: NSLocalizedString("mic_permission_title", value: "%@ Microphone Permission", comment: ""), SwiftTwilioVoicePlugin.appName),
+                                                                               message: NSLocalizedString("mic_permission_subtitle", value: "Calls need access to the microphone so the other person can hear you.", comment: ""),
                                                                                preferredStyle: .alert)
                     
-                    let continueWithMic: UIAlertAction = UIAlertAction(title: NSLocalizedString("btn_continue_no_mic", comment: ""),
+                    let continueWithMic: UIAlertAction = UIAlertAction(title: NSLocalizedString("btn_continue_no_mic", value: "Continue without microphone", comment: ""),
                                                                        style: .default,
                                                                        handler: { (action) in
                                                                         self.performStartCallAction(uuid: uuid, handle: to)
                                                                        })
                     alertController.addAction(continueWithMic)
                     
-                    let goToSettings: UIAlertAction = UIAlertAction(title:NSLocalizedString("btn_settings", comment: ""),
+                    let goToSettings: UIAlertAction = UIAlertAction(title:NSLocalizedString("btn_settings", value: "Settings", comment: ""),
                                                                     style: .default,
                                                                     handler: { (action) in
                                                                         UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!,
@@ -466,7 +468,7 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
                                                                     })
                     alertController.addAction(goToSettings)
                     
-                    let cancel: UIAlertAction = UIAlertAction(title: NSLocalizedString("btn_cancel", comment: ""),
+                    let cancel: UIAlertAction = UIAlertAction(title: NSLocalizedString("btn_cancel", value: "Cancel", comment: ""),
                                                               style: .cancel,
                                                               handler: { (action) in
                                                                 //self.toggleUIState(isEnabled: true, showCallControl: false)
@@ -678,7 +680,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
         from = from.replacingOccurrences(of: "client:", with: "")
         
         self.sendPhoneCallEvents(description: "Ringing|\(from)|\(callInvite.to)|Incoming\(formatCustomParams(params: callInvite.customParameters))", isError: false)
-        reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: callerName(from: from, params: callInvite.customParameters))
+        let name = callerName(from: from, params: callInvite.customParameters)
+        incomingCallerName = (callInvite.callSid, name)
+        reportIncomingCall(from: from, uuid: callInvite.uuid, callerName: name)
         self.callInvite = callInvite
         updateCallerNameFromContacts(from: from, uuid: callInvite.uuid, params: callInvite.customParameters)
     }
@@ -692,6 +696,9 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
             guard let name = ContactNameLookup.name(for: from) else { return }
             DispatchQueue.main.async {
                 guard self.callInvite?.uuid == uuid || self.call?.uuid == uuid else { return }
+                if let callSid = self.callInvite?.callSid, self.incomingCallerName?.callSid == callSid {
+                    self.incomingCallerName = (callSid, name)
+                }
                 if #available(iOS 17.4, *), let liveCommunicationKit = self.liveCommunicationKit {
                     liveCommunicationKit.updateName(uuid: uuid, value: from, name: name)
                     self.sendPhoneCallEvents(description: "LOG|Caller name updated from phone contacts", isError: false)
@@ -740,7 +747,12 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
     public func cancelledCallInviteReceived(cancelledCallInvite: CancelledCallInvite, error: Error) {
         self.sendPhoneCallEvents(description: "Missed Call", isError: false)
         self.sendPhoneCallEvents(description: "LOG|cancelledCallInviteCanceled:", isError: false)
-        self.showMissedCallNotification(from: cancelledCallInvite.from, to: cancelledCallInvite.to)
+        var callerName: String?
+        if incomingCallerName?.callSid == cancelledCallInvite.callSid {
+            callerName = incomingCallerName?.name
+        }
+        incomingCallerName = nil
+        self.showMissedCallNotification(from: cancelledCallInvite.from, to: cancelledCallInvite.to, callerName: callerName)
         if (self.callInvite == nil) {
             self.sendPhoneCallEvents(description: "LOG|No pending call invite", isError: false)
             return
@@ -758,7 +770,8 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
         }
     }
     
-    func showMissedCallNotification(from:String?, to:String?){
+    /// `callerName` is the name shown while the call rang. Without it the name is looked up the same way.
+    func showMissedCallNotification(from:String?, to:String?, callerName knownName:String? = nil){
         guard UserDefaults.standard.optionalBool(forKey: "show-notifications") ?? true else{return}
         let notificationCenter = UNUserNotificationCenter.current()
 
@@ -766,18 +779,22 @@ public class SwiftTwilioVoicePlugin: NSObject, FlutterPlugin, FlutterSceneLifeCy
         notificationCenter.getNotificationSettings { (settings) in
           if settings.authorizationStatus == .authorized {
             let content = UNMutableNotificationContent()
-            var userName:String?
+            var userName = knownName
             if var from = from{
                 from = from.replacingOccurrences(of: "client:", with: "")
                 content.userInfo = ["type":"twilio-missed-call", "From":from]
                 if let to = to{
                     content.userInfo["To"] = to
                 }
-                userName = self.clients[from]
+                if userName == nil, self.clients[from] == nil, let contactName = ContactNameLookup.name(for: from) {
+                    userName = contactName
+                }
+                userName = userName ?? self.callerName(from: from, params: nil)
             }
             
             let title = userName ?? self.clients["defaultCaller"] ?? self.defaultCaller
-            content.title = String(format:  NSLocalizedString("notification_missed_call", comment: ""),title)
+            // The app has no Localizable.strings for these keys, the English default is used then.
+            content.title = String(format: NSLocalizedString("notification_missed_call", value: "Missed call from %@", comment: ""), title)
 
             let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
             let request = UNNotificationRequest(identifier: UUID().uuidString,
